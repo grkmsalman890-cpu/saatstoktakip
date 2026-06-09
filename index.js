@@ -239,7 +239,9 @@ async function checkAllProducts(report = false) {
 
 async function pollTelegram() {
   const updates = await getUpdates();
+  console.log(`[${new Date().toISOString()}] getUpdates: ${updates.length} update alındı`);
   for (const update of updates) {
+    console.log(`[${new Date().toISOString()}] Update işleniyor: update_id=${update.update_id}`);
     lastOffset = update.update_id;
     const msg = update.message;
     if (!msg || !msg.text) continue;
