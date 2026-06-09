@@ -80,8 +80,20 @@ async function handleCommand(text) {
       `*/sil* N — N. ürünü sil\n` +
       `*/liste* — Takip listesini gör\n` +
       `*/durum* — Anlık stok kontrolü\n` +
+      `*/test* — Örnek mesaj gör\n` +
       `*/yardim* — Bu mesajı göster`
     );
+    return;
+  }
+
+  if (trimmed === "/test") {
+    const exampleMessage =
+      `🟢 *STOKTA VAR!*\n\n` +
+      `⌚ *Unisex Retro Kol Saati A168WA-1WDF*\n\n` +
+      `💰 Fiyat: *1920.00 TRY*\n\n` +
+      `🔗 [Ürüne Git](https://saatcitevfik.com/unisex-retro-kol-saati-a168wa-1wdf-2-yil-turkiye-distributoru-ersa-saat-garantilidir-)\n\n` +
+      `⏰ ${new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}`;
+    await tgSend(exampleMessage, { disable_web_page_preview: false });
     return;
   }
 
