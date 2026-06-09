@@ -1,17 +1,23 @@
 const axios = require("axios");
+const express = require("express");
 const fs = require("fs");
 const path = require("path");
+
 const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
 const TELEGRAM_CHAT_ID = (process.env.TELEGRAM_CHAT_ID || "").trim();
 const CHECK_INTERVAL_MS = parseInt(process.env.CHECK_INTERVAL_MINUTES || "5") * 60 * 1000;
 const DATA_FILE = path.join(__dirname, "products.json");
-const OFFSET_FILE = path.join(__dirname, "lastOffset.json");
+const WEBHOOK_URL = "https://pure-consideration-production-e0b7.up.railway.app/webhook";
+const PORT = process.env.PORT || 3000;
+
 const DEFAULT_URL =
   "https://saatcitevfik.com/unisex-retro-kol-saati-a168wa-1wdf-2-yil-turkiye-distributoru-ersa-saat-garantilidir-";
+
 if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
   console.error("HATA: TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID environment variable olarak ayarlanmalı.");
   process.exit(1);
 }
+
 function loadProducts() {
   try {
     if (fs.existsSync(DATA_FILE)) {
@@ -26,23 +32,14 @@ function loadProducts() {
     .slice(0, 100);
   return envUrls.length > 0 ? envUrls : [DEFAULT_URL];
 }
+
 function saveProducts(urls) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(urls, null, 2));
 }
-function loadOffset() {
-  try {
-    if (fs.existsSync(OFFSET_FILE)) {
-      return JSON.parse(fs.readFileSync(OFFSET_FILE, "utf8")).offset || 0;
-    }
-  } catch (_) {}
-  return 0;
-}
-function saveOffset(offset) {
-  fs.writeFileSync(OFFSET_FILE, JSON.stringify({ offset }));
-}
+
 let products = loadProducts();
 const notificationSent = {};
-let lastOffset = loadOffset();
+
 async function tgSend(text, options = {}) {
   try {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -56,19 +53,10 @@ async function tgSend(text, options = {}) {
     console.error("Telegram gönderim hatası:", e.message);
   }
 }
-async function getUpdates() {
-  try {
-    const res = await axios.get(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`, {
-      params: { offset: lastOffset + 1, timeout: 5, allowed_updates: ["message"] },
-      timeout: 10000,
-    });
-    return res.data.result || [];
-  } catch (_) {
-    return [];
-  }
-}
+
 async function handleCommand(text) {
   const trimmed = text.trim();
+
   if (trimmed === "/yardim" || trimmed === "/start") {
     await tgSend(
       `🤖 *Stok Takip Botu — Komutlar*\n\n` +
@@ -81,6 +69,7 @@ async function handleCommand(text) {
     );
     return;
   }
+
   if (trimmed === "/test") {
     const exampleMessage =
       `🟢 *STOKTA VAR!*\n\n` +
@@ -91,6 +80,7 @@ async function handleCommand(text) {
     await tgSend(exampleMessage, { disable_web_page_preview: false });
     return;
   }
+
   if (trimmed === "/liste") {
     if (products.length === 0) {
       await tgSend("📭 Takip listesi boş. `/ekle URL` ile ürün ekle.");
@@ -100,10 +90,12 @@ async function handleCommand(text) {
     await tgSend(`📋 *Takip Edilen Ürünler (${products.length})*\n\n${list}`);
     return;
   }
+
   if (trimmed === "/durum") {
     await checkAllProducts(true);
     return;
   }
+
   if (trimmed.startsWith("/ekle ")) {
     const url = trimmed.slice(6).trim();
     if (!url.startsWith("http")) {
@@ -123,6 +115,7 @@ async function handleCommand(text) {
     await tgSend(`✅ Ürün eklendi! Toplam: *${products.length}* ürün\n\n${url}`);
     return;
   }
+
   if (trimmed.startsWith("/sil ")) {
     const n = parseInt(trimmed.slice(5).trim());
     if (isNaN(n) || n < 1 || n > products.length) {
@@ -135,8 +128,10 @@ async function handleCommand(text) {
     await tgSend(`🗑️ Silindi: ${removed}\n\nKalan ürün sayısı: *${products.length}*`);
     return;
   }
+
   await tgSend("❓ Bilinmeyen komut. `/yardim` yazarak komutları görebilirsin.");
 }
+
 async function checkProduct(url, forceReport = false) {
   try {
     const response = await axios.get(url, {
@@ -147,9 +142,11 @@ async function checkProduct(url, forceReport = false) {
       },
       timeout: 15000,
     });
+
     const html = response.data;
     const jsonLdMatches = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g);
     if (!jsonLdMatches) return null;
+
     let productData = null;
     for (const match of jsonLdMatches) {
       const jsonStr = match
@@ -163,7 +160,9 @@ async function checkProduct(url, forceReport = false) {
         }
       } catch (_) {}
     }
+
     if (!productData) return null;
+
     const offer = Array.isArray(productData.offers) ? productData.offers[0] : productData.offers;
     const availability = offer.availability || "";
     const price = offer.price || "?";
@@ -172,12 +171,15 @@ async function checkProduct(url, forceReport = false) {
     const inStock =
       availability.toLowerCase().includes("instock") ||
       availability.toLowerCase().includes("limitedavailability");
+
     console.log(
       `[${new Date().toISOString()}] ${inStock ? "✅ STOKTA VAR" : "❌ STOKTA YOK"} | ${price} ${currency} | ${productName.substring(0, 60)}`
     );
+
     if (forceReport) {
       return { inStock, price, currency, productName, url };
     }
+
     if (inStock && !notificationSent[url]) {
       const message =
         `🟢 *STOKTA VAR!*\n\n` +
@@ -190,12 +192,14 @@ async function checkProduct(url, forceReport = false) {
     } else if (!inStock) {
       notificationSent[url] = false;
     }
+
     return { inStock, price, currency, productName, url };
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Hata (${url.substring(0, 50)}):`, error.message);
     return null;
   }
 }
+
 async function checkAllProducts(report = false) {
   const results = [];
   for (const url of [...products]) {
@@ -203,6 +207,7 @@ async function checkAllProducts(report = false) {
     if (r) results.push(r);
     await new Promise((res) => setTimeout(res, 1000));
   }
+
   if (report && results.length > 0) {
     const lines = results.map(
       (r, i) =>
@@ -211,39 +216,61 @@ async function checkAllProducts(report = false) {
     await tgSend(`📊 *Durum Raporu*\n\n${lines.join("\n\n")}`);
   }
 }
-async function pollTelegram() {
-  const updates = await getUpdates();
-  for (const update of updates) {
-    lastOffset = update.update_id;
-    saveOffset(lastOffset);
+
+async function setWebhook() {
+  try {
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
+      url: WEBHOOK_URL,
+      allowed_updates: ["message"],
+    });
+    console.log(`Webhook ayarlandı: ${WEBHOOK_URL}`);
+  } catch (e) {
+    console.error("Webhook ayarlama hatası:", e.message);
+  }
+}
+
+const app = express();
+app.use(express.json());
+
+app.get("/", (req, res) => {
+  res.send("Stok takip botu çalışıyor.");
+});
+
+app.post("/webhook", async (req, res) => {
+  res.sendStatus(200);
+  try {
+    const update = req.body;
     const msg = update.message;
-    if (!msg || !msg.text) continue;
-    if (String(msg.chat.id) !== String(TELEGRAM_CHAT_ID)) continue;
+    if (!msg || !msg.text) return;
+    if (String(msg.chat.id) !== String(TELEGRAM_CHAT_ID)) return;
     if (msg.text.startsWith("/")) {
       console.log(`[${new Date().toISOString()}] Komut alındı: ${msg.text}`);
       await handleCommand(msg.text);
     }
+  } catch (e) {
+    console.error("Webhook işleme hatası:", e.message);
   }
-  setTimeout(pollTelegram, 2000);
-}
+});
+
 async function main() {
+  app.listen(PORT, () => {
+    console.log(`Sunucu ${PORT} portunda çalışıyor.`);
+  });
+
+  await setWebhook();
+
   console.log(`Stok takip botu başlatıldı.`);
   console.log(`Takip edilen ürün sayısı: ${products.length}`);
-  console.log(`Kontrol aralığı: ${CHECK_INTERVAL_MS / 60000} dakika`);
-  const pending = await getUpdates();
-  if (pending.length > 0) {
-    lastOffset = pending[pending.length - 1].update_id;
-    saveOffset(lastOffset);
-    console.log(`Başlangıçta ${pending.length} eski update atlandı.`);
-  }
+
   await tgSend(
     `🤖 *Stok Takip Botu Başlatıldı*\n\n` +
     `📦 Takip edilen ürün: *${products.length}*\n` +
     `🔄 Kontrol aralığı: Her *${CHECK_INTERVAL_MS / 60000}* dakikada bir\n\n` +
     `Komutlar için */yardim* yaz.`
   );
+
   await checkAllProducts();
   setInterval(checkAllProducts, CHECK_INTERVAL_MS);
-  pollTelegram();
 }
+
 main();
