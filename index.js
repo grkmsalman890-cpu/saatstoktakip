@@ -96,7 +96,6 @@ async function handleCommand(text) {
   }
 
   if (trimmed === "/durum") {
-    await tgSend(`🔄 ${products.length} ürün kontrol ediliyor...`);
     await checkAllProducts(true);
     return;
   }
