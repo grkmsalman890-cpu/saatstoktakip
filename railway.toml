@@ -1,7 +1,10 @@
-[build]
-builder = "dockerfile"
-dockerfilePath = "Dockerfile"
+FROM node:20-alpine
 
-[deploy]
-startCommand = "node index.js"
-restartPolicyType = "always"
+WORKDIR /app
+
+COPY package.json ./
+RUN npm install --production
+
+COPY index.js ./
+
+CMD ["node", "index.js"]
